@@ -32,6 +32,23 @@ $app->get('/cervejas/{id}', function ($id) use ($cervejas) {
 
 })->value('id', null);
 
+$app->post('/cervejas', function (Request $request) use ($app) {
+    // pega os dados 
+    if (!$data = $request->get('cerveja')) {
+        return new Response('Faltam Parâmetros', 400);
+    }
+
+    // Persiste na base de dados (considerando uma entidade do Doctrine nesse exemplo)
+    $cerveja = new Cerveja();
+    $cerveja->nome = $data['nome'];
+    $cerveja->estilo = $data['estilo'];
+
+    $cerveja->save();
+
+    // redireciona para a nova cerveja
+    return $app->redirect('/cervejas/'.$data['id'], 201);
+});
+
 $app->get('/estilos', function () use ($cervejas) {
     return implode(',', $cervejas['estilos']);
 });
