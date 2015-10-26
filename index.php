@@ -1,80 +1,129 @@
 <?php
 
 use Silex\Application;
-use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
 
-// load composer 
-$loader = require_once __DIR__.'/vendor/autoload.php';
+function pre($array, $die = true) {
+	echo '<pre>';
+	print_r($array);
+
+	if ($die) {
+		die();
+	}
+}
+// load composer
+$loader = require_once __DIR__ . '/vendor/autoload.php';
 
 $app = new Application();
 
-$cervejas = array(
-    'marcas' => array('Heineken','Stela','Brahma','Skol'),
-    'estilos' => array('Pilsen','Stout'),
-);
+$app->register(new Silex\Provider\DoctrineServiceProvider(), array(
+	'db.options' => array(
+		'drive' => 'pdo_mysql',
+		'host' => 'localhost',
+		'dbname' => 'restbeer',
+		'user' => 'root',
+		'password' => 'etx4',
+		'charset' => 'utf8',
 
-$app->get('/cervejas/{id}', function ($id) use ($cervejas) {
+	),
+));
 
-    if ($id == null) {
-        $result = implode(',', $cervejas['marcas']);
+$app->get('/cervejas/{id}', function ($id) use ($app) {
 
-        return new Response(json_encode($result), 200);
-    }
+	if ($id == null) {
+		$sql = 'SELECT * FROM cervejas';
+		try {
+			$cervejas = $app['db']->fetchAll($sql);
+		} catch (\Exception $e) {
+			pre($e->getMessage());
+		}
 
-    $key = array_key_exists($id, $cervejas['marcas']);
+		return new Response(json_encode($cervejas), 200);
+	}
 
-    if ($key === false) {
-        return new Response(json_encode('Ceveja cabo'), 404);
-    }
+	$sql = 'SELECT * FROM cervejas WHERE id = ?';
+	$cerveja = $app['db']->fetchAssoc($sql, array($id));
 
-    return new Response(json_encode($cervejas['marcas'][$id]), 200);
+	if (!$cerveja) {
+		return new Response(json_encode('Não encontrada'), 404);
+	}
+
+	return new Response(json_encode($cerveja), 200);
 
 })->value('id', null);
 
 $app->post('/cervejas', function (Request $request) use ($app) {
-    // pega os dados 
-    if (!$data = $request->get('cerveja')) {
-        return new Response('Faltam Parâmetros', 400);
-    }
+	// pega os dados
+	if (!$data = $request->get('cerveja')) {
+		return new Response('Faltam Parâmetros', 400);
+	}
 
-    // Persiste na base de dados (considerando uma entidade do Doctrine nesse exemplo)
-    $cerveja = new Cerveja();
-    $cerveja->nome = $data['nome'];
-    $cerveja->estilo = $data['estilo'];
+	$app['db']->insert('cervejas', array('nome' => $data['nome'], 'estilo' => $data['estilo']));
 
-    $cerveja->save();
-
-    // redireciona para a nova cerveja
-    return $app->redirect('/cervejas/'.$data['id'], 201);
+	return $app->redirect('/cervejas/' . $data['id'], 201);
 });
 
-$app->get('/estilos', function () use ($cervejas) {
-    return implode(',', $cervejas['estilos']);
+$app->put('/cervejas/{id}', function (Request $request, $id) use ($app) {
+
+	// pega os dados
+	if (!$data = $request->get('cerveja')) {
+		return new Response('Faltam Parâmetros', 400);
+	}
+
+	$sql = 'SELECT * FROM cervejas WHERE id = ?';
+	$cerveja = $app['db']->fetchAssoc($sql, array($id));
+
+	if (!$cerveja = $app['db']->find($id)) {
+		return new Response('Não encontrada', 404);
+	}
+
+	$app['db']->update(
+		'cervejas',
+		array('nome' => $data['nome'], 'estilo' => $data['estilo']),
+		array('id' => $cerveja['id'])
+	);
+
+	return new Response('Cerveja atualizada', 200);
+
+});
+
+$app->delete('cervejas/{id}', function (Request $request, $id) use ($app) {
+
+	$sql = 'SELECT *FROM cervejas WHERE nome = ?';
+	$cerveja = $app['db']->fetchAssoc($sql, array($id));
+
+	if (!$cerveja) {
+		return new Response('Não encontrada', 404);
+	}
+
+	$app['db']->delete('cervejas', array('id' => $cerveja['id']));
+
+	return new Response('Cerveja removida com sucesso', 200);
 });
 
 $app->error(function (\Exception $e, $code) {
-     if ($code == '404') {
-         return 'Página não encontrada';
-     }
+	if ($code == '404') {
+		return 'Página não encontrada';
+	}
 
-     return $e->getMessage();
+	return $e->getMessage();
 });
 
-$app->before(function (Request $request) use ($app) {
-    if (!$request->headers->has('authorization')) {
-        return new Response('Unauthorized', 401);
-    }
+// $app->before(function (Request $request) use ($app) {
+//     if (!$request->headers->has('authorization')) {
+//         return new Response('Unauthorized', 401);
+//     }
 
-    require_once 'configs/clientes.php';
-    if (!in_array($request->headers->get('authorization'), array_keys($clientes))) {
-        return new Response('Unauthorized', 401);
-    }
+//     require_once 'configs/clientes.php';
+//     if (!in_array($request->headers->get('authorization'), array_keys($clientes))) {
+//         return new Response('Unauthorized', 401);
+//     }
 
-});
+// });
 
 $app->after(function (Request $request, Response $response) {
-    $response->headers->set('Content-Type', 'text/json');
+	$response->headers->set('Content-Type', 'text/json');
 });
-
+$app['debug'] = true;
 $app->run();
